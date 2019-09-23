@@ -1,11 +1,16 @@
 import json
 import os
 import slack
+from typing import Tuple
 from slackeventsapi import SlackEventAdapter
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 ITEM_PREFIX = '\n    '
+
+POD = 'pod'
+DEPLOYMENT = 'deployment'
+HPA = 'hpa'
 
 SLACK_SIGNING_SECRET = os.environ['SLACK_SIGNING_SECRET']
 SLACK_OAUTH_ACCESS_TOKEN = os.environ['SLACK_OAUTH_ACCESS_TOKEN']
@@ -21,6 +26,8 @@ app_v1 = client.AppsV1Api()
 autoscaling_v1 = client.AutoscalingV1Api()
 channel_name_cache = dict()
 user_name_cache = dict()
+k8s_get_resource_method = dict()
+k8s_get_all_resource_method = dict()
 
 
 def delete_pod(pods: list) -> str:
@@ -42,19 +49,24 @@ def delete_handler(request: list) -> str:
         return delete_pod(request[1:])
     else:
         return 'you only can delete pod(s).'
+    
+    
+def get_k8s_resource(kind: str, resources: list) -> Tuple[list, list]:
+    errors = list()
+    if resources is None:
+        result = k8s_get_all_resource_method[kind](namespace=TARGET_NAMESPACE).items
+    else:
+        result = list()
+        for resource in resources:
+            try:
+                result.append(k8s_get_resource_method[kind](namespace=TARGET_NAMESPACE, name=resource))
+            except ApiException:
+                errors.append(f'`{resource}`: Not found')
+    return result, errors
 
 
 def get_pod(needed_pods: list) -> str:
-    result = list()
-    if needed_pods is None:
-        pods = core_v1.list_namespaced_pod(namespace=TARGET_NAMESPACE).items
-    else:
-        pods = list()
-        for pod in needed_pods:
-            try:
-                pods.append(core_v1.read_namespaced_pod(namespace=TARGET_NAMESPACE, name=pod))
-            except ApiException:
-                result.append(f'`{pod}`: Not found')
+    pods, result = get_k8s_resource(POD, needed_pods)
         
     for pod in pods:
         name = pod.metadata.name
@@ -65,16 +77,7 @@ def get_pod(needed_pods: list) -> str:
 
 
 def get_deployment(needed_deployments: list) -> str:
-    result = list()
-    if needed_deployments is None:
-        deployments = app_v1.list_namespaced_deployment(namespace=TARGET_NAMESPACE).items
-    else:
-        deployments = list()
-        for deployment in needed_deployments:
-            try:
-                deployments.append(app_v1.read_namespaced_deployment(namespace=TARGET_NAMESPACE, name=deployment))
-            except ApiException:
-                result.append(f'`{deployment}`: Not found')
+    deployments, result = get_k8s_resource(DEPLOYMENT, needed_deployments)
             
     for deployment in deployments:
         name = deployment.metadata.name
@@ -86,17 +89,7 @@ def get_deployment(needed_deployments: list) -> str:
 
 
 def get_hpa(needed_hpa: list) -> str:
-    result = list()
-    if needed_hpa is None:
-        hpas = autoscaling_v1.list_namespaced_horizontal_pod_autoscaler(namespace=TARGET_NAMESPACE).items
-    else:
-        hpas = list()
-        for hpa in needed_hpa:
-            try:
-                hpas.append(autoscaling_v1.read_namespaced_horizontal_pod_autoscaler(namespace=TARGET_NAMESPACE,
-                            name=hpa))
-            except ApiException:
-                result.append(f'`{hpa}`: Not found')
+    hpas, result = get_k8s_resource(HPA, needed_hpa)
                 
     for hpa in hpas:
         name = hpa.metadata.name
@@ -112,11 +105,11 @@ def get_hpa(needed_hpa: list) -> str:
 
 
 def get_handler(request: list) -> str:
-    if request[0] == 'pod':
+    if request[0] == POD:
         return get_pod(request[1:] if len(request) > 1 else None)
-    elif request[0] == 'deployment':
+    elif request[0] == DEPLOYMENT:
         return get_deployment(request[1:] if len(request) > 1 else None)
-    elif request[0] == 'hpa':
+    elif request[0] == HPA:
         return get_hpa(request[1:] if len(request) > 1 else None)
     else:
         return 'Unknown resource to get.'
@@ -191,9 +184,22 @@ def app_mention(event_data: dict):
     
     # print(event_data)
     slack_client.chat_postMessage(channel=channel_id, text=f'<@{sender_id}>, {response}')
+    
+    
+def setup_k8s_method():
+    k8s_get_resource_method[POD] = core_v1.read_namespaced_pod
+    k8s_get_all_resource_method[POD] = core_v1.list_namespaced_pod
+    
+    k8s_get_resource_method[DEPLOYMENT] = app_v1.read_namespaced_deployment
+    k8s_get_all_resource_method[DEPLOYMENT] = app_v1.list_namespaced_deployment
+    
+    k8s_get_resource_method[HPA] = autoscaling_v1.read_namespaced_horizontal_pod_autoscaler
+    k8s_get_all_resource_method[HPA] = autoscaling_v1.list_namespaced_horizontal_pod_autoscaler
 
 
 def main():
+    setup_k8s_method()
+    
     # Start the server on port 8080
     slack_events_adapter.start(host='0.0.0.0', port=8080)
     
