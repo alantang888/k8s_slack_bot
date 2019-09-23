@@ -20,6 +20,7 @@ core_v1 = client.CoreV1Api()
 app_v1 = client.AppsV1Api()
 autoscaling_v1 = client.AutoscalingV1Api()
 channel_name_cache = dict()
+user_name_cache = dict()
 
 
 def delete_pod(pods: list) -> str:
@@ -177,9 +178,10 @@ def app_mention(event_data: dict):
         slack_client.chat_postMessage(channel=channel_id, text=f"<@{sender_id}>, Must mention this bot at begin.")
         return
     
-    sender_info = slack_client.users_info(user=sender_id)
-    if sender_info['ok']:
-        sender_name = sender_info['user']['name']
+    if sender_id not in user_name_cache:
+        sender_info = slack_client.users_info(user=sender_id)
+        if sender_info['ok']:
+            user_name_cache[sender_id] = sender_info['user']['name']
         
     request_string = event_data['event']['text'][len(my_id_in_slack_format)+1:]
     
