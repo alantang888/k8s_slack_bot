@@ -139,6 +139,8 @@ def app_mention(event_data: dict):
     sender_id = event_data['event']['user']
     channel_id = event_data['event']['channel']
     
+    # TODO: Check channel.
+    
     if len(event_data['authed_users']) != 1:
         slack_client.chat_postMessage(channel=channel_id, text=f"<@{sender_id}>, Only can mention this bot. No others.")
         return
