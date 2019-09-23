@@ -18,8 +18,8 @@ I thinking is it use Slack commands for this app. Now is only response to @menti
 Use environment variables for configuration:
 - `SLACK_SIGNING_SECRET`: Slack Signing Secret (On your slack app basic information page)
 - `SLACK_OAUTH_ACCESS_TOKEN`: Slack OAuth Access Token (On your slack app install app page)
-- `SLACK_ALLOWED_CHANNEL`: Which Slack channel allowed send command to this app (Not implement yet)
-- `K8S_TARGET_NAMESPACE`: Which K8S namespace for operations 
+- `SLACK_ALLOWED_CHANNEL`: Which Slack channel allowed send command to this app
+- `K8S_TARGET_NAMESPACE`: Which K8S namespace for operations
 
 # Required Slack Scopes
 - groups:read
