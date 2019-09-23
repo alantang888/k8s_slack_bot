@@ -7,18 +7,18 @@ from kubernetes.client.rest import ApiException
 
 ITEM_PREFIX = '\n    '
 
-SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
-SLACK_OAUTH_ACCESS_TOKEN = os.environ["SLACK_OAUTH_ACCESS_TOKEN"]
+SLACK_SIGNING_SECRET = os.environ['SLACK_SIGNING_SECRET']
+SLACK_OAUTH_ACCESS_TOKEN = os.environ['SLACK_OAUTH_ACCESS_TOKEN']
+SLACK_ALLOWED_CHANNEL = os.getenv('SLACK_ALLOWED_CHANNEL', '')
+TARGET_NAMESPACE = os.getenv('K8S_TARGET_NAMESPACE', 'default')
 
 
-slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, endpoint="/slack/events")
+slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, endpoint='/slack/events')
 slack_client = slack.WebClient(token=SLACK_OAUTH_ACCESS_TOKEN)
 config.incluster_config.load_incluster_config()
 core_v1 = client.CoreV1Api()
 app_v1 = client.AppsV1Api()
 autoscaling_v1 = client.AutoscalingV1Api()
-
-TARGET_NAMESPACE = 'default'
 
 
 def delete_pod(pods: list) -> str:
