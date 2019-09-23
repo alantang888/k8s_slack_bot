@@ -19,6 +19,7 @@ config.incluster_config.load_incluster_config()
 core_v1 = client.CoreV1Api()
 app_v1 = client.AppsV1Api()
 autoscaling_v1 = client.AutoscalingV1Api()
+channel_name_cache = dict()
 
 
 def delete_pod(pods: list) -> str:
@@ -131,6 +132,31 @@ def request_handler(request: str) -> str:
         return get_handler(requests_list[1:])
     else:
         return 'Unknown action.'
+    
+    
+def request_in_right_channel(channel_id: str) -> bool:
+    # Check channel name meet config. If not set will ignore checking
+    if SLACK_ALLOWED_CHANNEL != '':
+        if channel_id in channel_name_cache:
+            if channel_name_cache[channel_id] != SLACK_ALLOWED_CHANNEL:
+                # TODO: Log it
+                return False
+        else:
+            # Only allow private channel. Because public everyone can join. No meaning for checking
+            channel_info = slack_client.groups_info(channel=channel_id)
+            if channel_info['ok']:
+                channel_name_cache[channel_id] = channel_info['group']['name']
+                if channel_info['group']['name'] != SLACK_ALLOWED_CHANNEL:
+                    # If configed channel name and received channel name not match. Ignore request
+                    # TODO: Log it
+                    return False
+            else:
+                # Get private channel info error, or not private channel. Ignore request. Not cache it.
+                # Because if just insufficient permission. User can add permission and re-install slack app anytime.
+                # If cached, user need restart this app too. (Or need add expire for cache?)
+                # TODO: Log it
+                return False
+    return True
 
 
 # Create an event listener for "reaction_added" events and print the emoji name
@@ -139,8 +165,9 @@ def app_mention(event_data: dict):
     sender_id = event_data['event']['user']
     channel_id = event_data['event']['channel']
     
-    # TODO: Check channel.
-    
+    if not request_in_right_channel(channel_id):
+        return
+
     if len(event_data['authed_users']) != 1:
         slack_client.chat_postMessage(channel=channel_id, text=f"<@{sender_id}>, Only can mention this bot. No others.")
         return

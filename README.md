@@ -22,7 +22,7 @@ Use environment variables for configuration:
 - `K8S_TARGET_NAMESPACE`: Which K8S namespace for operations 
 
 # Required Slack Scopes
-- channels:read
+- groups:read
 - chat:write:bot
 - bot
 - users:read
