@@ -61,6 +61,7 @@ def get_k8s_resource(kind: str, resources: list) -> Tuple[list, list]:
             try:
                 result.append(k8s_get_resource_method[kind](namespace=TARGET_NAMESPACE, name=resource))
             except ApiException:
+                # TODO: Log error
                 errors.append(f'`{resource}`: Not found')
     return result, errors
 
@@ -88,6 +89,14 @@ def get_deployment(needed_deployments: list) -> str:
     return 'Deployment status:{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
 
 
+def get_hpa_target_type(hpa_target: dict) -> str:
+    for key in hpa_target.keys():
+        if key.startswith('target'):
+            return key[len('target'):]
+    # TODO: Log no target from input for debug
+    return ''
+
+
 def get_hpa(needed_hpa: list) -> str:
     hpas, result = get_k8s_resource(HPA, needed_hpa)
                 
@@ -96,10 +105,33 @@ def get_hpa(needed_hpa: list) -> str:
         min_replicas = hpa.spec.min_replicas
         max_replicas = hpa.spec.max_replicas
         
-        # target_metrics = hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/metrics']
-        # current_metrics = hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/current-metrics']
-        
         result.append(f'`{name}`: Min:{min_replicas} Max:{max_replicas}')
+        
+        target_metrics = json.loads(hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/metrics'])
+        current_metrics = json.loads(hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/current-metrics'])
+        
+        if needed_hpa is None:
+            # Not show metric detail when get all HPAs
+            continue
+        for metric in target_metrics:
+            if metric['type'] == 'Resource':
+                metric_name = metric['resource']['name']
+                target_metric_type = get_hpa_target_type(metric['resource'])
+                target_value = metric['resource'][f'target{target_metric_type}']
+                current_value = [current_metric['resource'][f'current{target_metric_type}']
+                                 for current_metric in current_metrics if current_metric['type'] == 'Resource'
+                                 and current_metric['resource']['name'] == metric_name][0]
+            elif metric['type'] == 'External':
+                metric_name = metric['external']['metricName']
+                target_metric_type = get_hpa_target_type(metric['external'])
+                target_value = metric['external'][f'target{target_metric_type}']
+                current_value = [current_metric['external'][f'current{target_metric_type}']
+                                 for current_metric in current_metrics if current_metric['type'] == 'External'
+                                 and current_metric['external']['metricName'] == metric_name][0]
+            else:
+                # Don't know this type. Log it?
+                continue
+            result.append(f'    {metric_name}: {current_value}/{target_value}')
         
     return 'HPA config:{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
 
