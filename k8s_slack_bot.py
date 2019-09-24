@@ -1,7 +1,10 @@
 import json
+import logging
 import os
+import sys
 import slack
 from typing import Tuple
+from stackdriver_json_formatter import StackdriverJsonFormatter
 from slackeventsapi import SlackEventAdapter
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -28,6 +31,7 @@ channel_name_cache = dict()
 user_name_cache = dict()
 k8s_get_resource_method = dict()
 k8s_get_all_resource_method = dict()
+log = None
 
 
 def delete_pod(pods: list) -> str:
@@ -37,7 +41,8 @@ def delete_pod(pods: list) -> str:
             print(f'deleteing `{pod}`')
             core_v1.delete_namespaced_pod(namespace=TARGET_NAMESPACE, name=pod)
             result.append(f'`{pod}` deleted')
-        except ApiException:
+        except ApiException as e:
+            log.error(f'Delete pod "{pod}" from k8s error', {'error': e.body})
             result.append(f"Can't delete `{pod}`")
     return 'Delete pod(s):{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
 
@@ -60,8 +65,8 @@ def get_k8s_resource(kind: str, resources: list) -> Tuple[list, list]:
         for resource in resources:
             try:
                 result.append(k8s_get_resource_method[kind](namespace=TARGET_NAMESPACE, name=resource))
-            except ApiException:
-                # TODO: Log error
+            except ApiException as e:
+                log.error(f'Get {kind} from k8s error', {'kind': kind, 'resources': resources, 'error': e.body})
                 errors.append(f'`{resource}`: Not found')
     return result, errors
 
@@ -93,7 +98,7 @@ def get_hpa_target_type(hpa_target: dict) -> str:
     for key in hpa_target.keys():
         if key.startswith('target'):
             return key[len('target'):]
-    # TODO: Log no target from input for debug
+    log.debug("HPA metric don't have key started with target", {'hpa_resource': hpa_target})
     return ''
 
 
@@ -165,7 +170,7 @@ def request_in_right_channel(channel_id: str) -> bool:
     if SLACK_ALLOWED_CHANNEL != '':
         if channel_id in channel_name_cache:
             if channel_name_cache[channel_id] != SLACK_ALLOWED_CHANNEL:
-                # TODO: Log it
+                log.info(f'Received request not in {channel_name_cache[channel_id]}. Which is not allowed')
                 return False
         else:
             # Only allow private channel. Because public everyone can join. No meaning for checking
@@ -174,13 +179,13 @@ def request_in_right_channel(channel_id: str) -> bool:
                 channel_name_cache[channel_id] = channel_info['group']['name']
                 if channel_info['group']['name'] != SLACK_ALLOWED_CHANNEL:
                     # If configed channel name and received channel name not match. Ignore request
-                    # TODO: Log it
+                    log.info(f'Received request not in {channel_name_cache[channel_id]}. Which is not allowed')
                     return False
             else:
                 # Get private channel info error, or not private channel. Ignore request. Not cache it.
                 # Because if just insufficient permission. User can add permission and re-install slack app anytime.
                 # If cached, user need restart this app too. (Or need add expire for cache?)
-                # TODO: Log it
+                log.info(f"Can't lookup channel ID {channel_id} by groups.info. It may not exist or not private channel")
                 return False
     return True
 
@@ -210,12 +215,18 @@ def app_mention(event_data: dict):
         
     request_string = event_data['event']['text'][len(my_id_in_slack_format)+1:]
     
-    # TODO: Log request with sender_name and sender_id
+    log.info('Request received.',
+                 {
+                     'sender_name': user_name_cache[sender_id] if sender_id in user_name_cache else 'LOOKUP_ERROR',
+                     'sender_id': sender_id, 'channel_id': channel_id, 'request': request_string,
+                     'event_id': event_data['event_id']
+                  })
     
     response = request_handler(request_string)
     
     # print(event_data)
     slack_client.chat_postMessage(channel=channel_id, text=f'<@{sender_id}>, {response}')
+    log.info('Request handled.', {'event_id': event_data['event_id']})
     
     
 def setup_k8s_method():
@@ -227,9 +238,19 @@ def setup_k8s_method():
     
     k8s_get_resource_method[HPA] = autoscaling_v1.read_namespaced_horizontal_pod_autoscaler
     k8s_get_all_resource_method[HPA] = autoscaling_v1.list_namespaced_horizontal_pod_autoscaler
+    
+    
+def setup_logger():
+    global log
+    log = logging.getLogger('slack_bot')
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setFormatter(StackdriverJsonFormatter())
+    log.addHandler(stream)
+    log.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 
 def main():
+    setup_logger()
     setup_k8s_method()
     
     # Start the server on port 8080

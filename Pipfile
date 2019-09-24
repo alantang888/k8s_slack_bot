@@ -10,5 +10,10 @@ slackclient = "*"
 slackeventsapi = "*"
 kubernetes = "*"
 
+[packages.stackdriver_json_formatter]
+git = "https://github.com/calipsa/stackdriver_json_formatter.git"
+editable = true
+ref = "3863432c"
+
 [requires]
 python_version = "3.7"
