@@ -12,8 +12,10 @@ from kubernetes.client.rest import ApiException
 ITEM_PREFIX = '\n    '
 
 POD = 'pod'
+NODE = 'node'
 DEPLOYMENT = 'deployment'
 HPA = 'hpa'
+KIND_DAEMONSET = 'DaemonSet'
 
 SLACK_SIGNING_SECRET = os.environ['SLACK_SIGNING_SECRET']
 SLACK_OAUTH_ACCESS_TOKEN = os.environ['SLACK_OAUTH_ACCESS_TOKEN']
@@ -38,7 +40,7 @@ def delete_pod(pods: list) -> str:
     result = list()
     for pod in pods:
         try:
-            print(f'deleteing `{pod}`')
+            log.info(f'deleteing `{pod}`')
             core_v1.delete_namespaced_pod(namespace=TARGET_NAMESPACE, name=pod)
             result.append(f'`{pod}` deleted')
         except ApiException as e:
@@ -47,13 +49,47 @@ def delete_pod(pods: list) -> str:
     return 'Delete pod(s):{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
 
 
+def is_daemonset_pod(pod: client.models.v1_pod.V1Pod) -> bool:
+    if pod.metadata.owner_references is None or pod.metadata.owner_references[0].kind == KIND_DAEMONSET:
+        return True
+    return False
+
+
+def drain_node(node: str):
+    core_v1.patch_node(node, body={"spec":{"unschedulable":True}})
+    pods = core_v1.list_pod_for_all_namespaces(field_selector=f'spec.nodeName={node}').items
+    for pod in pods:
+        if is_daemonset_pod(pod):
+            continue
+        pod_meta = client.V1ObjectMeta(name=pod.metadata.name, namespace=pod.metadata.namespace)
+        eviction = client.V1beta1Eviction(metadata=pod_meta,
+                                          delete_options=client.V1DeleteOptions(grace_period_seconds=60))
+        core_v1.create_namespaced_pod_eviction(name=pod.metadata.name, namespace=pod.metadata.namespace, body=eviction)
+
+
+def delete_node(nodes: list) -> str:
+    result = list()
+    for node in nodes:
+        try:
+            drain_node(node)
+            result.append(f'{node} drained. Let autoscaler remove it later')
+        except Exception as e:
+            log.error(f'Drain node "{node}" from k8s error', {'error': e.body})
+            result.append(f'{node} drain error')
+    return f'Drained node(s):{ITEM_PREFIX+ITEM_PREFIX.join(result)}'
+
+
 def delete_handler(request: list) -> str:
-    if request[0] == 'pod':
+    if request[0] == POD:
         if len(request) < 2:
             return 'Missed target pod to delete.'
         return delete_pod(request[1:])
+    elif request[0] == NODE:
+        if len(request) < 2:
+            return 'Missed target node to delete.'
+        return delete_node(request[1:])
     else:
-        return 'you only can delete pod(s).'
+        return 'you only can delete pod(s) or node(s).'
     
     
 def get_k8s_resource(kind: str, resources: list) -> Tuple[list, list]:
