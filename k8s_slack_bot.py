@@ -148,6 +148,12 @@ def get_hpa(needed_hpa: list) -> str:
         
         result.append(f'`{name}`: Min:{min_replicas} Max:{max_replicas}')
         
+        if (
+                'autoscaling.alpha.kubernetes.io/metrics' not in hpa.metadata.annotations or
+                'autoscaling.alpha.kubernetes.io/current-metrics' not in hpa.metadata.annotations
+           ):
+            continue
+            
         target_metrics = json.loads(hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/metrics'])
         current_metrics = json.loads(hpa.metadata.annotations['autoscaling.alpha.kubernetes.io/current-metrics'])
         
