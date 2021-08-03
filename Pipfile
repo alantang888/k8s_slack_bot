@@ -1,19 +1,19 @@
 [[source]]
-name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
-
-[dev-packages]
+name = "pypi"
 
 [packages]
-slackclient = "*"
-slackeventsapi = "*"
 kubernetes = "*"
+slack-sdk = "*"
+slackeventsapi = "*"
 
 [packages.stackdriver_json_formatter]
 git = "https://github.com/calipsa/stackdriver_json_formatter.git"
 editable = true
 ref = "3863432c"
 
+[dev-packages]
+
 [requires]
-python_version = "3.7"
+python_version = "3.9"

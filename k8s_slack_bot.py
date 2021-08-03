@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-import slack
+import slack_sdk
 from typing import Tuple
 from stackdriver_json_formatter import StackdriverJsonFormatter
 from slackeventsapi import SlackEventAdapter
@@ -24,7 +24,7 @@ TARGET_NAMESPACE = os.getenv('K8S_TARGET_NAMESPACE', 'default')
 
 
 slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, endpoint='/slack/events')
-slack_client = slack.WebClient(token=SLACK_OAUTH_ACCESS_TOKEN)
+slack_client = slack_sdk.WebClient(token=SLACK_OAUTH_ACCESS_TOKEN)
 config.incluster_config.load_incluster_config()
 core_v1 = client.CoreV1Api()
 app_v1 = client.AppsV1Api()
@@ -127,7 +127,7 @@ def get_deployment(needed_deployments: list) -> str:
         image_tag = deployment.spec.template.spec.containers[0].image.split(':')[-1]
         result.append(f'`{name}`: ready replicas: {num_replica}, image:{image_tag}')
         
-    return 'Deployment status:{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
+    return 'Deployment status (Just showing latest deployment config, doesn\'t means your update is success. Detail can use argo cd):{}'.format(ITEM_PREFIX+ITEM_PREFIX.join(result))
 
 
 def get_hpa_target_type(hpa_target: dict) -> str:
@@ -216,10 +216,10 @@ def request_in_right_channel(channel_id: str) -> bool:
                 return False
         else:
             # Only allow private channel. Because public everyone can join. No meaning for checking
-            channel_info = slack_client.groups_info(channel=channel_id)
+            channel_info = slack_client.conversations_info(channel=channel_id)
             if channel_info['ok']:
-                channel_name_cache[channel_id] = channel_info['group']['name']
-                if channel_info['group']['name'] != SLACK_ALLOWED_CHANNEL:
+                channel_name_cache[channel_id] = channel_info['channel']['name']
+                if channel_info['channel']['name'] != SLACK_ALLOWED_CHANNEL:
                     # If configed channel name and received channel name not match. Ignore request
                     log.info(f'Received request not in {channel_name_cache[channel_id]}. Which is not allowed')
                     return False
