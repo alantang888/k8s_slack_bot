@@ -241,10 +241,10 @@ def app_mention(event_data: dict):
     if not request_in_right_channel(channel_id):
         return
 
-    if len(event_data['authed_users']) != 1:
+    if len(event_data['authorizations']) != 1:
         slack_client.chat_postMessage(channel=channel_id, text=f"<@{sender_id}>, Only can mention this bot. No others.")
         return
-    my_id = event_data['authed_users'][0]
+    my_id = event_data['authorizations'][0]['user_id']
     my_id_in_slack_format = f'<@{my_id}>'
     if not event_data['event']['text'].startswith(my_id_in_slack_format):
         slack_client.chat_postMessage(channel=channel_id, text=f"<@{sender_id}>, Must mention this bot at begin.")
